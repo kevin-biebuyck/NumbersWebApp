@@ -11,48 +11,48 @@ using StackExchange.Redis;
 
 namespace NumbersWebApp.Controllers.Api
 {
-    [RoutePrefix("api/number/contract")]
+    [RoutePrefix("api/{countryCode}/number/contract/{productType}")]
     public class ContractNumberController : ApiController
     {
         private const string _redisKey = "contractNumber";
-        private const string _countryLetter = "W";
         private readonly IDatabase _db;
+        private readonly ConnectionMultiplexer _redis;
 
         public ContractNumberController()
         {
-            var redis = ConnectionMultiplexer.Connect("localhost");
-            _db = redis.GetDatabase();
+            _redis = ConnectionMultiplexer.Connect("redis-17550.c11.us-east-1-3.ec2.cloud.redislabs.com:17550");
+            _db = _redis.GetDatabase();
         }
 
         [HttpGet, Route("")]
         // GET api/<controller>
-        public async Task<IHttpActionResult> Get()
+        public async Task<IHttpActionResult> Get(string countryCode, string productType)
         {
             long number;
-            var value = await _db.StringGetAsync(GetRedisKey());
+            var value = await _db.StringGetAsync(GetRedisKey(countryCode, productType));
             if (value.TryParse(out number))
-                return Ok(BuildConctractNumber(number));
+                return Ok(BuildConctractNumber(number, countryCode.ToUpper().First()));
             return Ok((object)null);
         }
 
         [HttpPost, Route("")]
         // POST api/<controller>
-        public async Task<IHttpActionResult> Post([FromBody]string value)
+        public async Task<IHttpActionResult> Post(string countryCode, string productType)
         {
-            var newNumber = await _db.StringIncrementAsync(GetRedisKey());
-            return Ok(BuildConctractNumber(newNumber));
+            var newNumber = await _db.StringIncrementAsync(GetRedisKey(countryCode, productType));
+            return Ok(BuildConctractNumber(newNumber, countryCode.ToUpper().First()));
         }
 
-        private static string BuildConctractNumber(long newContractNumber, DateTime? atDate = null)
+        private static string BuildConctractNumber(long newContractNumber, char countryLetter, DateTime? atDate = null)
         {
             var date = atDate ?? DateTime.Now;
-            return $"{_countryLetter}{date.ToString("yy", CultureInfo.InvariantCulture)}{IntToAnyBaseString(newContractNumber, "0123456789ABCDEFGHJKLMNOPQRSTUVWXYZ").PadLeft(5, '0')}";
+            return $"{countryLetter}{date.ToString("yy", CultureInfo.InvariantCulture)}{IntToAnyBaseString(newContractNumber, "0123456789ABCDEFGHJKLMNOPQRSTUVWXYZ").PadLeft(5, '0')}";
         }
 
-        private static string GetRedisKey(DateTime? atDate = null)
+        private static string GetRedisKey(string countryCode, string productType, DateTime? atDate = null)
         {
             var date = atDate ?? DateTime.Now;
-            return $"{_redisKey}:{date.ToString("yy", CultureInfo.InvariantCulture)}";
+            return $"{countryCode.ToLower()}:{productType.ToLower()}:{_redisKey}:{date.ToString("yy", CultureInfo.InvariantCulture)}";
         }
 
         public static string IntToAnyBaseString(long value, string baseChars)
@@ -73,6 +73,11 @@ namespace NumbersWebApp.Controllers.Api
             Array.Copy(buffer, i, result, 0, 32 - i);
 
             return new string(result);
+        }
+        protected override void Dispose(bool disposing)
+        {
+            _redis.Dispose();
+            base.Dispose(disposing);
         }
     }
 }
